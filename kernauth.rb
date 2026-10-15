@@ -115,6 +115,32 @@ rescue OpenSSL::PKey::PKeyError, ArgumentError, JSON::ParserError
   false
 end
 
+def api_message(raw, fallback)
+  payload = JSON.parse(raw)
+  message = payload.is_a?(Hash) ? payload.dig("error", "message") : nil
+  message.is_a?(String) && !message.empty? ? message : fallback
+rescue JSON::ParserError
+  fallback
+end
+
+def heartbeat(license_key, installation_id, api = API, app_id = APP_ID)
+  nonce = SecureRandom.urlsafe_base64(24)
+  fingerprint = Digest::SHA256.hexdigest("kernauth-device-v1:#{installation_id}")
+  body = {
+    protocol_version: 1, public_app_id: app_id, client_version: "1.0.0", license_key: license_key,
+    fingerprint_version: 1, device_fingerprint: fingerprint, installation_id: installation_id, nonce: nonce
+  }
+  uri = URI("#{api}/v1/client/heartbeat")
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = uri.scheme == "https"
+  http.open_timeout = 10
+  http.read_timeout = 10
+  response = http.post(uri.path, JSON.generate(body), "content-type" => "application/json")
+  raise api_message(response.body, "heartbeat failed (#{response.code})") unless response.is_a?(Net::HTTPSuccess)
+  payload = JSON.parse(response.body)
+  raise "heartbeat failed" unless payload.is_a?(Hash) && payload["ok"] == true
+end
+
 def request(mode, license_key, installation_id, api = API, app_id = APP_ID, public_key = PUBLIC_KEY)
   nonce = SecureRandom.urlsafe_base64(24)
   fingerprint = Digest::SHA256.hexdigest("kernauth-device-v1:#{installation_id}")
@@ -128,7 +154,7 @@ def request(mode, license_key, installation_id, api = API, app_id = APP_ID, publ
   http.open_timeout = 10
   http.read_timeout = 10
   response = http.post(uri.path, JSON.generate(body), "content-type" => "application/json")
-  raise "#{mode} failed (#{response.code})" unless response.is_a?(Net::HTTPSuccess)
+  raise api_message(response.body, "#{mode} failed (#{response.code})") unless response.is_a?(Net::HTTPSuccess)
 
   grant = JSON.parse(response.body)
   raise "Invalid or expired signed entitlement" unless verify_grant(grant, nonce, app_id, public_key)
@@ -166,11 +192,22 @@ end
 
 if __FILE__ == $PROGRAM_NAME
   app = KernAuth.new
-  raise app.message unless app.validate(license_key, installation_id)
+  key = license_key
+  hwid = installation_id
+  raise app.message unless app.validate(key, hwid)
 
   ent = app.entitlement
   puts "Status: #{ent['status']}"
   puts "Features: #{ent['features']}"
   puts "License: #{ent['license_id']}"
   puts "Check expires: #{ent['expires_at']}"
+  loop do
+    sleep 60
+    begin
+      heartbeat(key, hwid, app.api, app.app_id)
+    rescue StandardError => error
+      puts error.message
+      exit 1
+    end
+  end
 end
