@@ -16,7 +16,7 @@ PUBLIC_KEY = "__PUBLIC_KEY__"
 FIELDS = %w[protocol_version entitlement_id application_id license_id status features device_id issued_at expires_at server_time nonce key_id].freeze
 
 class KernAuth
-  attr_reader :api, :app_id, :key_id, :public_key, :message
+  attr_reader :api, :app_id, :key_id, :public_key, :message, :entitlement
   attr_accessor :success
 
   def initialize(api = API, app_id = APP_ID, key_id = KEY_ID, public_key = PUBLIC_KEY)
@@ -26,6 +26,7 @@ class KernAuth
     @public_key = public_key
     @success = false
     @message = ""
+    @entitlement = nil
   end
 
   def validate(license_key, installation_id)
@@ -33,13 +34,14 @@ class KernAuth
   end
 
   def call(mode, license_key, installation_id, ok_message)
-    request(mode, license_key, installation_id, api, app_id, key_id, public_key)
+    @entitlement = request(mode, license_key, installation_id, api, app_id, key_id, public_key)
     self.success = true
     @message = ok_message
     true
   rescue StandardError => error
     self.success = false
     @message = error.message
+    @entitlement = nil
     false
   end
 end
@@ -131,13 +133,37 @@ def request(mode, license_key, installation_id, api = API, app_id = APP_ID, key_
 
   grant = JSON.parse(response.body)
   raise "Invalid or expired signed entitlement" unless verify_grant(grant, nonce, app_id, key_id, public_key)
+
+  grant["entitlement"]
+end
+
+def license_key
+  env = ENV.fetch("KERN_LICENSE_KEY", "").strip
+  return env unless env.empty?
+
+  print "Enter license: " if $stdin.tty?
+  $stdin.gets.to_s.strip
+end
+
+def installation_id
+  env = ENV.fetch("KERN_INSTALLATION_ID", "").strip
+  return env unless env.empty?
+  if File.exist?("kernauth-install")
+    saved = File.read("kernauth-install").strip
+    return saved unless saved.empty?
+  end
+  saved = SecureRandom.hex(16)
+  File.write("kernauth-install", "#{saved}\n")
+  saved
 end
 
 if __FILE__ == $PROGRAM_NAME
-  license = ENV.fetch("KERN_LICENSE_KEY")
-  installation = ENV.fetch("KERN_INSTALLATION_ID")
   app = KernAuth.new
-  raise app.message unless app.validate(license, installation)
+  raise app.message unless app.validate(license_key, installation_id)
 
-  puts app.message
+  ent = app.entitlement
+  puts "Status: #{ent['status']}"
+  puts "Features: #{canonical_features(ent['features'])}"
+  puts "License: #{ent['license_id']}"
+  puts "Check expires: #{ent['expires_at']}"
 end
