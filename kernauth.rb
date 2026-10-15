@@ -149,13 +149,21 @@ end
 def installation_id
   env = ENV.fetch("KERN_INSTALLATION_ID", "").strip
   return env unless env.empty?
-  if File.exist?("kernauth-install")
-    saved = File.read("kernauth-install").strip
-    return saved unless saved.empty?
+  hwid = machine_hwid.strip
+  return hwid if hwid.match?(/\A[A-Za-z0-9_-]{8,64}\z/)
+  raise "Could not read the HWID"
+end
+
+def machine_hwid
+  case RUBY_PLATFORM
+  when /mswin|mingw|windows/i
+    `powershell.exe -NoProfile -Command "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value"`
+  when /darwin/
+    output = `ioreg -rd1 -c IOPlatformExpertDevice`
+    output[/\"IOPlatformUUID\" = \"([^\"]+)\"/, 1] || ""
+  else
+    File.read("/etc/machine-id")
   end
-  saved = SecureRandom.hex(16)
-  File.write("kernauth-install", "#{saved}\n")
-  saved
 end
 
 if __FILE__ == $PROGRAM_NAME
