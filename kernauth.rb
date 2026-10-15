@@ -35,6 +35,7 @@ class KernAuth
 
   def call(mode, license_key, installation_id, ok_message)
     @entitlement = request(mode, license_key, installation_id, api, app_id, key_id, public_key)
+    @entitlement["features"] = canonical_features(@entitlement["features"])
     self.success = true
     @message = ok_message
     true
@@ -163,7 +164,7 @@ if __FILE__ == $PROGRAM_NAME
 
   ent = app.entitlement
   puts "Status: #{ent['status']}"
-  puts "Features: #{canonical_features(ent['features'])}"
+  puts "Features: #{ent['features']}"
   puts "License: #{ent['license_id']}"
   puts "Check expires: #{ent['expires_at']}"
 end
