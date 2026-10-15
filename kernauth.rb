@@ -11,18 +11,16 @@ require "uri"
 
 API = "https://api.kernauth.com"
 APP_ID = "__PUBLIC_APP_ID__"
-KEY_ID = "__KEY_ID__"
 PUBLIC_KEY = "__PUBLIC_KEY__"
 FIELDS = %w[protocol_version entitlement_id application_id license_id status features device_id issued_at expires_at server_time nonce key_id].freeze
 
 class KernAuth
-  attr_reader :api, :app_id, :key_id, :public_key, :message, :entitlement
+  attr_reader :api, :app_id, :public_key, :message, :entitlement
   attr_accessor :success
 
-  def initialize(api = API, app_id = APP_ID, key_id = KEY_ID, public_key = PUBLIC_KEY)
+  def initialize(api = API, app_id = APP_ID, public_key = PUBLIC_KEY)
     @api = api
     @app_id = app_id
-    @key_id = key_id
     @public_key = public_key
     @success = false
     @message = ""
@@ -34,7 +32,7 @@ class KernAuth
   end
 
   def call(mode, license_key, installation_id, ok_message)
-    @entitlement = request(mode, license_key, installation_id, api, app_id, key_id, public_key)
+    @entitlement = request(mode, license_key, installation_id, api, app_id, public_key)
     @entitlement["features"] = canonical_features(@entitlement["features"])
     self.success = true
     @message = ok_message
@@ -100,11 +98,11 @@ rescue ArgumentError
   nil
 end
 
-def verify_grant(grant, nonce, app_id = APP_ID, key_id = KEY_ID, public_key = PUBLIC_KEY, now = Time.now)
+def verify_grant(grant, nonce, app_id = APP_ID, public_key = PUBLIC_KEY, now = Time.now)
   ent = grant["entitlement"]
   expiry = Time.iso8601(ent["expires_at"])
   return false unless ent["protocol_version"] == 1 && ent["nonce"] == nonce &&
-                       ent["application_id"] == app_id && ent["key_id"] == key_id &&
+                       ent["application_id"] == app_id &&
                        ent["status"] == "active" && expiry > now
 
   raw = strict_b64(public_key)
@@ -117,7 +115,7 @@ rescue OpenSSL::PKey::PKeyError, ArgumentError, JSON::ParserError
   false
 end
 
-def request(mode, license_key, installation_id, api = API, app_id = APP_ID, key_id = KEY_ID, public_key = PUBLIC_KEY)
+def request(mode, license_key, installation_id, api = API, app_id = APP_ID, public_key = PUBLIC_KEY)
   nonce = SecureRandom.urlsafe_base64(24)
   fingerprint = Digest::SHA256.hexdigest("kernauth-device-v1:#{installation_id}")
   body = {
@@ -133,7 +131,7 @@ def request(mode, license_key, installation_id, api = API, app_id = APP_ID, key_
   raise "#{mode} failed (#{response.code})" unless response.is_a?(Net::HTTPSuccess)
 
   grant = JSON.parse(response.body)
-  raise "Invalid or expired signed entitlement" unless verify_grant(grant, nonce, app_id, key_id, public_key)
+  raise "Invalid or expired signed entitlement" unless verify_grant(grant, nonce, app_id, public_key)
 
   grant["entitlement"]
 end

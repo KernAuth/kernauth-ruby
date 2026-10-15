@@ -1,6 +1,6 @@
 # KernAuth Ruby example
 
-Paste the public app ID, key ID, and public key from Developers into `kernauth.rb`. Ruby 3.1 or newer with OpenSSL.
+Paste the public app ID and public key from Developers into `kernauth.rb`. Ruby 3.1 or newer with OpenSSL.
 
 ## Instance
 
@@ -8,7 +8,6 @@ Paste the public app ID, key ID, and public key from Developers into `kernauth.r
 app = KernAuth.new(
   "https://api.kernauth.com",
   "__PUBLIC_APP_ID__",
-  "__KEY_ID__",
   "__PUBLIC_KEY__",
 )
 ```
